@@ -3,8 +3,11 @@ name: Trigger AI README
 on:
   push:
     branches:
-      - main # Change to 'master' if your default branch is master
+      - main
 
+permissions:
+  contents: write 
+  
 jobs:
   build:
     uses: Onwuka2007/github-automation/.github/workflows/generate-readme-reusable.yml@main
