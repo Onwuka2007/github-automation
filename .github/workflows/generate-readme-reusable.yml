@@ -1,0 +1,48 @@
+name: Shared AI README Generator
+
+on:
+  workflow_call:
+    secrets:
+      GEMINI_API_KEY:
+        required: true
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Target Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout Central Automation Repo
+        uses: actions/checkout@v4
+        with:
+          repository: Onwuka2007/github-automation
+          ref: main
+          path: temp-automation
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: |
+          pip install google-genai pathspec
+
+      - name: Run AI README Generator
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python temp-automation/.github/scripts/generate_readme.py
+
+      - name: Commit and Push Updated README
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.io"
+          git add README.md
+          git diff --staged --quiet || (git commit -m "docs: auto-update project README.md [skip ci]" && git push)
