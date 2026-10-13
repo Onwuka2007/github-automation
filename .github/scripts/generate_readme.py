@@ -1,8 +1,10 @@
 import os
+import time
+import random
 import pathspec
 from google import genai
+from google.genai import errors
 
-# Directories and files to ignore to avoid token overload and clutter
 IGNORE_PATTERNS = [
     ".git",
     "node_modules",
@@ -31,15 +33,11 @@ def generate_tree(start_dir, spec):
         rel_root = os.path.relpath(root, start_dir)
         if rel_root == ".":
             rel_root = ""
-        
-        # Filter directories in-place based on gitignore/ignore patterns
         dirs[:] = [d for d in dirs if not spec.match_file(os.path.join(rel_root, d))]
-        
         level = rel_root.count(os.sep) if rel_root else 0
         indent = "│   " * level + "├── " if level > 0 else ""
         if rel_root:
             tree_lines.append(f"{indent}{os.path.basename(root)}/")
-        
         sub_indent = "│   " * (level + 1) + "├── " if rel_root else "├── "
         for file in sorted(files):
             file_path = os.path.join(rel_root, file)
@@ -50,21 +48,16 @@ def generate_tree(start_dir, spec):
 def gather_codebase_context(root_dir, spec):
     context = []
     priority_files = ["package.json", "requirements.txt", "Cargo.toml", "go.mod", "pom.xml", "Dockerfile", "README.md"]
-    
     for root, dirs, files in os.walk(root_dir):
         rel_root = os.path.relpath(root, root_dir)
         if rel_root == ".":
             rel_root = ""
-            
         dirs[:] = [d for d in dirs if not spec.match_file(os.path.join(rel_root, d))]
-        
         for file in files:
             file_path = os.path.join(root, file)
             rel_path = os.path.join(rel_root, file) if rel_root else file
-            
             if spec.match_file(rel_path):
                 continue
-                
             if file in priority_files or file.endswith((".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java", ".cpp", ".c", ".php")):
                 try:
                     with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -108,18 +101,32 @@ def main():
     Output ONLY valid markdown content for the README.md file without conversational filler.
     """
 
-    print("Calling Gemini API to generate README...")
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-    response = client.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=prompt,
-    )
     
-    readme_content = response.text
-    
-    with open("README.md", "w", encoding="utf-8") as f:
-        f.write(readme_content)
-    print("README.md successfully updated!")
+    # Retry logic for 503 / high demand server errors
+    max_attempts = 5
+    base_backoff = 2
+    response = None
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            print(f"Calling Gemini API (Attempt {attempt}/{max_attempts})...")
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt,
+            )
+            break
+        except errors.ServerError as e:
+            if attempt == max_attempts:
+                raise e
+            wait = base_backoff ** attempt + random.uniform(0, 1)
+            print(f"Server is busy (503). Retrying in {wait:.1f} seconds...")
+            time.sleep(wait)
+
+    if response and response.text:
+        with open("README.md", "w", encoding="utf-8") as f:
+            f.write(response.text)
+        print("README.md successfully updated!")
 
 if __name__ == "__main__":
     main()
