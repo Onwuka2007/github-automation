@@ -1,71 +1,94 @@
-# Automated README Generator
+<!-- AUTO-GENERATED-AI-README -->
 
-An automated CI/CD documentation pipeline that leverages Google's Gemini AI to dynamically generate and maintain comprehensive, professional `README.md` documentation for your repositories.
+# ai-readme-generator
 
----
+A command-line interface (CLI) tool that scans target project directories, respects `.gitignore` rules, extracts deterministic facts, gathers source code within a size budget, and uses the Gemini API to generate `README.md` files complete with Mermaid architecture diagrams.
 
-## 🚀 Features
+## Project Overview
 
-- **Automated Documentation**: Uses GitHub Actions workflows to build or update your README upon repository triggers.
-- **AI-Powered Insights**: Analyzes your project structure, source code, and configuration files via the `google-genai` SDK to draft detailed technical overviews.
-- **Smart Filtering**: Integrates with `.gitignore` and predefined ignore patterns to filter out irrelevant files (`node_modules`, `venv`, logs, build outputs, etc.) and focus on core source logic.
-- **Priority File Analysis**: Prioritizes crucial setup files (`package.json`, `requirements.txt`, `Dockerfile`, etc.) to accurately infer the project tech stack and installation commands.
+`ai-readme-generator` automates project documentation by computing deterministic ground truths (such as project structure, package manager manifests, and configuration) and sending them alongside bounded source code contexts to the Google Gemini API. It inserts a sentinel marker at the top of generated files to prevent overwriting hand-written READMEs unless forced.
 
----
+## Features
 
-## 📂 Folder Structure
+- Scans target project directories while filtering out common build artifacts and dependencies.
+- Respects project-level `.gitignore` rules combined with default ignore patterns.
+- Prioritizes manifest and configuration files within context size limits.
+- Automatically extracts verifiable code facts (Python version, console commands, and license presence) to supply as ground truth to the model.
+- Automatically falls through a sequence of Gemini models with retry and exponential backoff logic on API errors.
+- Prevents accidental overwrites of manually edited documentation using a sentinel marker.
 
-```text
-.github/
-├── scripts/
-│   └── generate_readme.py     # Core Python script for directory tree traversal and AI prompt generation
-└── workflows/
-    ├── auto-readme.yml        # Main automation pipeline workflow
-    └── generate-readme-reusable.yml # Reusable workflow for flexible integration
+## System Architecture
+
+```mermaid
+flowchart TD
+    A["Target Project Directory"] -->|"Scan & Load Ignores"| B["File Tree & Source Context"]
+    B -->|"Extract Deterministic Facts"| C["Fact Aggregation"]
+    C -->|"Construct Prompt"| D["Gemini API Client"]
+    D -->|"Model Chain & Backoff"| E["Generated README.md"]
 ```
 
-- **`.github/scripts/generate_readme.py`**: Crawls the target repository, parses files with path specifications, aggregates codebase snippets, and communicates with the Gemini API.
-- **`.github/workflows/`**: Contains GitHub Actions configurations that orchestrate the execution of the README generation script.
+## Folder Structure
 
----
+```text
+github-automation/
+├── .github/
+├── ai_readme/
+│   ├── __init__.py
+│   └── generator.py
+├── .env.example
+├── .gitignore
+├── pyproject.toml
+└── README.md
+```
 
-## 🧰 Tech Stack
+- **`ai_readme/`**: Contains the core package logic, including directory scanning, model querying, and CLI handling.
+- **`.env.example`**: Template file indicating required environment variables for API authentication.
+- **`pyproject.toml`**: Project metadata, dependencies, and console script entry point definition.
 
-- **Language:** Python
-- **Automation:** GitHub Actions (CI/CD)
-- **AI/ML:** Google GenAI SDK (`google-genai`)
-- **Utilities:** `pathspec` for gitwildmatch pattern parsing
+## Tech Stack
 
----
+- **Language:** Python >=3.9
+- **API Client:** `google-genai`
+- **Configuration & Utilities:** `python-dotenv`, `pathspec`
 
-## ⚙️ Getting Started & Installation
+## Installation
 
-### Prerequisites
+1. Ensure Python >=3.9 is installed.
+2. Clone the repository and install the package with its dependencies:
 
-- Python 3.x
-- A Google Gemini API Key configured in your GitHub repository secrets (e.g., `GEMINI_API_KEY`).
+```bash
+pip install .
+```
 
-### Setup
+3. Configure your Gemini API key by copying `.env.example` to `.env` and setting your API key:
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/your-username/your-repo.git
-   cd your-repo
-   ```
+```bash
+cp .env.example .env
+```
 
-2. Install the required dependencies:
-   ```bash
-   pip install google-genai pathspec
-   ```
+Edit `.env` to include your key:
+```env
+GEMINI_API_KEY=your_actual_api_key_here
+```
 
-3. Run the generator script locally (ensure your API key is set in your environment):
-   ```bash
-   export GEMINI_API_KEY="your-api-key-here"
-   python .github/scripts/generate_readme.py
-   ```
+## Usage
 
----
+The package exposes the `gen-readme` console command. 
 
-## 📄 License & Usage
+```bash
+gen-readme [options]
+```
 
-This project is open-source software provided under the standard MIT License. Feel free to adopt and configure the GitHub Actions workflows to automate documentation across your development lifecycle.
+### Options and Behavior
+
+- The tool checks for the presence of an existing `README.md` containing the sentinel marker (`<!-- AUTO-GENERATED-AI-README -->`). If the marker is missing, generation is aborted to protect manual documentation unless forced.
+- Uses a model fallback chain (`gemini-3.5-flash-lite`, `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.1-flash-lite`) with up to 3 attempts per model using exponential backoff.
+- Limits source context sent to the API to a maximum budget (`MAX_CONTEXT_CHARS` of 60,000 characters), truncating individual files at `MAX_FILE_CHARS` (3,000 characters) while prioritizing manifest files (`package.json`, `requirements.txt`, `pyproject.toml`, etc.).
+
+## Data Handling and Privacy
+
+This project sends data to an external service (the Google Gemini API). 
+
+- **Source Code Transmission:** The tool scans project files, builds a file tree, and transmits source code snippets and configuration contents up to a 60,000-character budget to the Gemini API.
+- **Ignore Rules:** Excludes files matched by `.gitignore` as well as default ignore patterns (such as `.git`, `node_modules`, `venv`, `.env`, private keys, and certificate files).
+- **Security Warning:** Secrets residing in files that are not caught by `.gitignore` or the default ignore patterns will be sent to the external API.
