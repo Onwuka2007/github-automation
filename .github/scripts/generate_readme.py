@@ -103,30 +103,42 @@ def main():
 
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
     
-    # Retry logic for 503 / high demand server errors
-    max_attempts = 5
-    base_backoff = 2
+    models_to_try = ["gemini-3.8-flash", "gemini-3.5-flash-lite"]
     response = None
+    max_attempts_per_model = 2
+    base_backoff = 2
 
-    for attempt in range(1, max_attempts + 1):
-        try:
-            print(f"Calling Gemini API (Attempt {attempt}/{max_attempts})...")
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-            )
+    for model_name in models_to_try:
+        success = False
+        for attempt in range(1, max_attempts_per_model + 1):
+            try:
+                print(f"Trying model '{model_name}' (Attempt {attempt}/{max_attempts_per_model})...")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
+                success = True
+                break
+            except errors.ServerError as e:
+                print(f"Server error on {model_name}: {e}")
+                if attempt == max_attempts_per_model:
+                    print(f"Model {model_name} exhausted. Trying next model...")
+                else:
+                    wait = base_backoff ** attempt + random.uniform(0, 1)
+                    time.sleep(wait)
+            except Exception as e:
+                print(f"Client/Network error with model {model_name}: {e}. Trying next model...")
+                break
+        
+        if success:
             break
-        except errors.ServerError as e:
-            if attempt == max_attempts:
-                raise e
-            wait = base_backoff ** attempt + random.uniform(0, 1)
-            print(f"Server is busy (503). Retrying in {wait:.1f} seconds...")
-            time.sleep(wait)
 
-    if response and response.text:
-        with open("README.md", "w", encoding="utf-8") as f:
-            f.write(response.text)
-        print("README.md successfully updated!")
+    if not response or not response.text:
+        raise RuntimeError("All fallback models failed to generate content.")
+
+    with open("README.md", "w", encoding="utf-8") as f:
+        f.write(response.text)
+    print("README.md successfully updated!")
 
 if __name__ == "__main__":
     main()
