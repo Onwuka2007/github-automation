@@ -32,6 +32,7 @@ except ModuleNotFoundError:  # Python 3.10 and earlier
     tomllib = None
 
 # Load local .env variables if present
+load_dotenv(".env.local")
 load_dotenv()
 
 # Sentinel written at the top of generated READMEs. A README without it is
